@@ -376,7 +376,7 @@ export default function Segmentation() {
                   innerRadius="50%"
                   outerRadius="78%"
                   paddingAngle={2}
-                  onClick={d => openDrawer(d.name)}
+                  onClick={d => d.name && openDrawer(d.name)}
                   style={{ cursor: 'pointer' }}
                 >
                   {SEGMENTS.map(s => (

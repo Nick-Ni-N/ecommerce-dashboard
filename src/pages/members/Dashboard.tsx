@@ -362,7 +362,7 @@ export default function Dashboard() {
   const {
     paginatedData, totalCount, currentPage, pageSize, sortConfig, columnFilters, filterBadges,
     handleSort, handleFilter, handlePageChange, handlePageSizeChange, clearAllFilters, removeFilter,
-    setColumnFilters, setSortConfig, sortedData
+    setColumnFilters, setSortConfig
   } = useBITable({
     data: computedData,
     initialPageSize: 100,
