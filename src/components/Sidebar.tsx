@@ -74,7 +74,7 @@ const navigation = [
 export default function Sidebar() {
     const location = useLocation();
     const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(() => {
-        const state: Record<string, boolean> = {};
+        const state: Record<string, boolean> = { '會員': true };
         navigation.forEach(section => {
             // Default to expanded if we are currently deep inside this section
             if (location.pathname.startsWith(section.pathPattern)) {

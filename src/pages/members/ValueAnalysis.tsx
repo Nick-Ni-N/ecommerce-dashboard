@@ -316,7 +316,6 @@ export default function ValueAnalysis() {
   const [dateRangeType, setDateRangeType] = useState('最近30天');
   const [customStart, setCustomStart] = useState('2026-02-01');
   const [customEnd, setCustomEnd] = useState('2026-03-13');
-  const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['total_spent', 'aov', 'ltv']);
   const [selectedDimensionsMap, setSelectedDimensionsMap] = useState<Record<string, string[]>>({});
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerTitle, setDrawerTitle] = useState('');
@@ -400,15 +399,7 @@ export default function ValueAnalysis() {
 
       {/* Control Bar */}
       <AnalyticsControlBar
-        selectedMetrics={selectedMetrics}
-        onMetricsChange={setSelectedMetrics}
-        metricsLabel="欄位選擇器"
-        metrics={[
-          { id: 'total_spent', label: '累積消費金額' },
-          { id: 'aov', label: '平均客單價' },
-          { id: 'ltv', label: 'LTV' },
-          { id: 'order_count', label: '購買次數' },
-        ]}
+        showMetricSelector={false}
         dimensionFields={[
           { id: 'tier', label: '會員階級', options: TIERS.map(t => ({ id: t, label: t })) },
           { id: 'gender', label: '性別', options: [{ id: 'female', label: '女性' }, { id: 'male', label: '男性' }] },

@@ -42,6 +42,7 @@ interface AnalyticsControlBarProps {
     onDimensionsChange?: (dimensions: string[]) => void;
 
     hideTimeGranularity?: boolean;
+    showMetricSelector?: boolean;
     singleRowLayout?: boolean;
 
     // Date Range Props
@@ -67,6 +68,7 @@ export default function AnalyticsControlBar({
     selectedDimensions: externalSelectedDimensions,
     onDimensionsChange,
     hideTimeGranularity = false,
+    showMetricSelector = true,
     singleRowLayout = false,
     dateRangeType: externalDateRangeType = '最近7天',
     onDateRangeTypeChange,
@@ -451,7 +453,7 @@ export default function AnalyticsControlBar({
                     </div>
                 )}
                 {!singleRowLayout && <div className="h-8 w-px bg-slate-100 hidden sm:block mx-1"></div>}
-                {renderMetricSelector()}
+                {showMetricSelector && renderMetricSelector()}
                 {renderDimensionSelector()}
             </div>
         </div>

@@ -177,6 +177,7 @@ export default function NewMemberConversion() {
         selectedDimensionsMap={selectedDimensionsMap}
         onDimensionsMapChange={setSelectedDimensionsMap}
         hideTimeGranularity={true}
+        showMetricSelector={false}
         singleRowLayout={true}
         dateRangeType={dateRangeType}
         onDateRangeTypeChange={setDateRangeType}

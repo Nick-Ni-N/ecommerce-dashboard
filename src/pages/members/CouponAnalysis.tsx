@@ -76,6 +76,7 @@ export default function CouponAnalysis() {
         selectedDimensions={selectedDimensions}
         onDimensionsChange={setSelectedDimensions}
         hideTimeGranularity={true}
+        showMetricSelector={false}
         singleRowLayout={true}
       />
 
