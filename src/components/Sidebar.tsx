@@ -25,11 +25,11 @@ const navigation = [
         pathPattern: '/members',
         items: [
             { name: '會員資料表', href: '/members/dashboard' },
+            { name: '新會員轉換', href: '/members/new-member-conversion' },
             { name: '會員價值分析', href: '/members/value-analysis' },
             { name: '回購與流失', href: '/members/retention-churn' },
             { name: '會員分群', href: '/members/segmentation' },
             { name: '優惠工具分析', href: '/members/coupon-analysis' },
-            { name: '會員互動成效', href: '/members/engagement' },
         ],
     },
     {

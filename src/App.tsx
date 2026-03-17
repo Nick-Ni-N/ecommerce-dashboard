@@ -11,6 +11,7 @@ import Profitability from './pages/overview/Profitability';
 
 // 會員
 import MembersDashboard from './pages/members/Dashboard';
+import NewMemberConversion from './pages/members/NewMemberConversion';
 import ValueAnalysis from './pages/members/ValueAnalysis';
 import RetentionChurn from './pages/members/RetentionChurn';
 import Segmentation from './pages/members/Segmentation';
@@ -57,6 +58,7 @@ function App() {
 
           <Route path="members">
             <Route path="dashboard" element={<MembersDashboard />} />
+            <Route path="new-member-conversion" element={<NewMemberConversion />} />
             <Route path="value-analysis" element={<ValueAnalysis />} />
             <Route path="retention-churn" element={<RetentionChurn />} />
             <Route path="segmentation" element={<Segmentation />} />

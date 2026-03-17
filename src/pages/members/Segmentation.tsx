@@ -5,10 +5,9 @@ import {
   ResponsiveContainer, Cell, PieChart, Pie, Label,
 } from 'recharts';
 import AnalyticsControlBar from '../../components/AnalyticsControlBar';
+import { MEMBER_DIMENSION_FIELDS } from '../../data/memberDimensions';
 
-// ─────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 interface DrawerMember {
   id: string;
   tier: string;
@@ -19,73 +18,75 @@ interface DrawerMember {
   aov: number;
 }
 
-// ─────────────────────────────────────────────
-// Segmentation Logic (V1 — simplified RFM)
-// Rules:
-//   新會員    : orderCount = 1
-//   成長會員  : orderCount 2–3
-//   穩定會員  : orderCount >= 4
-//   高價值會員: totalSpent in top-20%
-//   可能流失  : churnRisk = 黃燈
-//   已流失    : churnRisk = 紅燈
-// ─────────────────────────────────────────────
-
 interface Segment {
   name: string;
   memberCount: number;
-  revenue: number;          // NTD
-  avgRepurchaseDays: number;
-  avgAOV: number;
+  revenue: number;
   color: string;
   desc: string;
 }
 
+// ─── Segmentation Data ───────────────────────────────────────────────────────
 const SEGMENTS: Segment[] = [
   {
     name: '新會員',
     memberCount: 3200, revenue: 9600000,
-    avgRepurchaseDays: 0, avgAOV: 1850,
     color: '#6366f1',
     desc: '首購後尚無回購紀錄，需引導第二次購買。',
   },
   {
     name: '成長會員',
     memberCount: 2540, revenue: 21090000,
-    avgRepurchaseDays: 48, avgAOV: 2280,
     color: '#818cf8',
     desc: '已有 2–3 次購買，正在建立消費習慣。',
   },
   {
     name: '穩定會員',
     memberCount: 1860, revenue: 58480000,
-    avgRepurchaseDays: 32, avgAOV: 3120,
     color: '#10b981',
     desc: '購買次數 ≥ 4，回購週期穩定。',
   },
   {
     name: '高價值會員',
     memberCount: 2700, revenue: 135000000,
-    avgRepurchaseDays: 24, avgAOV: 4650,
     color: '#f59e0b',
     desc: '累積消費位於前 20%，是最重要的營收來源。',
   },
   {
     name: '可能流失',
     memberCount: 1420, revenue: 11230000,
-    avgRepurchaseDays: 65, avgAOV: 1640,
     color: '#fb923c',
     desc: '流失預警黃燈，近期活躍度下滑。',
   },
   {
     name: '已流失',
     memberCount: 1680, revenue: 7560000,
-    avgRepurchaseDays: 180, avgAOV: 1240,
     color: '#ef4444',
     desc: '流失預警紅燈，長期未購買，須喚回。',
   },
 ];
 
 const totalSegmentMembers = SEGMENTS.reduce((s, d) => s + d.memberCount, 0);
+const totalRevenue = SEGMENTS.reduce((s, d) => s + d.revenue, 0);
+
+const revenueShareData = SEGMENTS.map(s => ({
+  ...s,
+  revenueShare: parseFloat(((s.revenue / totalRevenue) * 100).toFixed(1)),
+}));
+
+// 高價值會員健康度
+const HV_HEALTH = [
+  { name: '活躍高價值', count: 1850, color: '#10b981' },
+  { name: '可能流失高價值', count: 560, color: '#fb923c' },
+  { name: '已流失高價值', count: 290, color: '#ef4444' },
+];
+
+// 新會員成長能力
+const NEW_MEMBER_GROWTH = [
+  { name: '只購買一次', count: 3200, color: '#94a3b8' },
+  { name: '二購會員', count: 1840, color: '#818cf8' },
+  { name: '多購會員', count: 4400, color: '#10b981' },
+];
 
 // Mock drawer members
 const TIERS = ['一般', '銅', '銀', '金', '鑽石'];
@@ -99,9 +100,7 @@ const mockMembers: DrawerMember[] = Array.from({ length: 36 }, (_, i) => ({
   aov: Math.round(((i + 1) * 5200) / ([1, 2, 3, 5, 7, 10][i % 6])),
 }));
 
-// ─────────────────────────────────────────────
-// Donut center label — stable module-level ref
-// ─────────────────────────────────────────────
+// ─── Donut center label ───────────────────────────────────────────────────────
 function SegDonutCenter({ viewBox }: any) {
   if (!viewBox) return null;
   const { cx, cy } = viewBox;
@@ -117,9 +116,7 @@ function SegDonutCenter({ viewBox }: any) {
   );
 }
 
-// ─────────────────────────────────────────────
-// Drilldown Drawer
-// ─────────────────────────────────────────────
+// ─── Drilldown Drawer ─────────────────────────────────────────────────────────
 function MemberDrawer({ isOpen, onClose, title, members }: {
   isOpen: boolean; onClose: () => void; title: string; members: DrawerMember[];
 }) {
@@ -138,38 +135,38 @@ function MemberDrawer({ isOpen, onClose, title, members }: {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 bg-slate-50/50 space-y-3">
-          {members.length === 0 ? (
-            <div className="h-40 flex items-center justify-center text-slate-400 text-sm">查無符合會員</div>
-          ) : members.map(m => (
-            <div key={m.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm hover:border-indigo-200 transition-all">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center">
-                  <User className="w-4 h-4 text-slate-400" />
+          {members.length === 0
+            ? <div className="h-40 flex items-center justify-center text-slate-400 text-sm">查無符合會員</div>
+            : members.map(m => (
+              <div key={m.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm hover:border-indigo-200 transition-all">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-9 h-9 rounded-full bg-slate-50 flex items-center justify-center">
+                    <User className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{m.id}</p>
+                    <div className="flex gap-1.5 mt-0.5 flex-wrap">
+                      <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-bold">{m.tier}</span>
+                      <span className="text-[10px] bg-slate-50 text-slate-600 px-1.5 py-0.5 rounded font-bold">{m.segment}</span>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-bold text-slate-900">{m.id}</p>
-                  <div className="flex gap-1.5 mt-0.5 flex-wrap">
-                    <span className="text-[10px] bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded font-bold">{m.tier}</span>
-                    <span className="text-[10px] bg-slate-50 text-slate-600 px-1.5 py-0.5 rounded font-bold">{m.segment}</span>
+                <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-50 text-center">
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">購買次數</p>
+                    <p className="text-sm font-mono font-bold text-slate-700 mt-0.5">{m.orderCount}次</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">累積消費</p>
+                    <p className="text-sm font-mono font-bold text-slate-700 mt-0.5">${m.totalSpent.toLocaleString()}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wider">客單價</p>
+                    <p className="text-sm font-mono font-bold text-slate-700 mt-0.5">${m.aov.toLocaleString()}</p>
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-50 text-center">
-                <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">購買次數</p>
-                  <p className="text-sm font-mono font-bold text-slate-700 mt-0.5">{m.orderCount}次</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">累積消費</p>
-                  <p className="text-sm font-mono font-bold text-slate-700 mt-0.5">${m.totalSpent.toLocaleString()}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-400 uppercase tracking-wider">客單價</p>
-                  <p className="text-sm font-mono font-bold text-slate-700 mt-0.5">${m.aov.toLocaleString()}</p>
-                </div>
-              </div>
-            </div>
-          ))}
+            ))}
         </div>
         <div className="p-4 border-t border-slate-100">
           <button className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all">
@@ -181,25 +178,7 @@ function MemberDrawer({ isOpen, onClose, title, members }: {
   );
 }
 
-// ─────────────────────────────────────────────
-// Shared tooltip renderer
-// ─────────────────────────────────────────────
-function makeBarTooltip(yLabel: string, fmt: (v: number) => string) {
-  return ({ active, payload }: any) => {
-    if (!active || !payload?.length) return null;
-    const d = payload[0].payload as Segment;
-    return (
-      <div className="bg-white border border-slate-200 rounded-xl shadow-xl p-3 text-xs">
-        <p className="font-bold mb-1" style={{ color: d.color }}>{d.name}</p>
-        <p className="text-slate-600">{yLabel}：<span className="font-mono font-bold">{fmt(payload[0].value)}</span></p>
-      </div>
-    );
-  };
-}
-
-// ─────────────────────────────────────────────
-// Main Page
-// ─────────────────────────────────────────────
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function Segmentation() {
   const [dateRangeType, setDateRangeType] = useState('最近30天');
   const [customStart, setCustomStart] = useState('2026-02-01');
@@ -215,40 +194,25 @@ export default function Segmentation() {
     setDrawerOpen(true);
   };
 
+  const openDrawerByName = (name: string) => {
+    setDrawerTitle(`${name} 名單`);
+    setDrawerMembers(mockMembers.slice(0, 6));
+    setDrawerOpen(true);
+  };
+
   const handleBarClick = (state: any) => {
     const seg: Segment | undefined = state?.activePayload?.[0]?.payload;
-    if (seg) openDrawer(seg.name);
+    if (seg?.name) openDrawer(seg.name);
   };
 
   const kpis = useMemo(() => {
     const hvSeg = SEGMENTS.find(s => s.name === '高價值會員')!;
     const churnSeg = SEGMENTS.find(s => s.name === '已流失')!;
-    const totalRevenue = SEGMENTS.reduce((s, d) => s + d.revenue, 0);
     return [
-      {
-        title: '總會員數',
-        value: totalSegmentMembers.toLocaleString(),
-        icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-50',
-        trend: '+3.2%', up: true,
-      },
-      {
-        title: '高價值會員數',
-        value: hvSeg.memberCount.toLocaleString(),
-        icon: Star, color: 'text-amber-600', bg: 'bg-amber-50',
-        trend: '+8.5%', up: true,
-      },
-      {
-        title: '高價值會員營收佔比',
-        value: `${((hvSeg.revenue / totalRevenue) * 100).toFixed(1)}%`,
-        icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50',
-        trend: '+2.1pp', up: true,
-      },
-      {
-        title: '流失會員數',
-        value: churnSeg.memberCount.toLocaleString(),
-        icon: UserX, color: 'text-rose-600', bg: 'bg-rose-50',
-        trend: '+84', up: false,
-      },
+      { title: '總會員數', value: totalSegmentMembers.toLocaleString(), icon: Users, color: 'text-indigo-600', bg: 'bg-indigo-50', trend: '+3.2%', up: true },
+      { title: '高價值會員數', value: hvSeg.memberCount.toLocaleString(), icon: Star, color: 'text-amber-600', bg: 'bg-amber-50', trend: '+8.5%', up: true },
+      { title: '高價值會員營收佔比', value: `${((hvSeg.revenue / totalRevenue) * 100).toFixed(1)}%`, icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50', trend: '+2.1pp', up: true },
+      { title: '流失會員數', value: churnSeg.memberCount.toLocaleString(), icon: UserX, color: 'text-rose-600', bg: 'bg-rose-50', trend: '+84', up: false },
     ];
   }, []);
 
@@ -265,65 +229,47 @@ export default function Segmentation() {
     );
   };
 
-  const revenueTooltip = makeBarTooltip('營收（GMV）', v => `$${(v / 1000000).toFixed(1)}M`);
-  const countTooltip = makeBarTooltip('會員數', v => v.toLocaleString());
-  const repurchaseTooltip = makeBarTooltip('平均回購天數', v => `${v} 天`);
-  const aovTooltip = makeBarTooltip('平均客單價', v => `$${v.toLocaleString()}`);
+  const revenueShareTooltip = ({ active, payload }: any) => {
+    if (!active || !payload?.length) return null;
+    const d = payload[0].payload;
+    return (
+      <div className="bg-white border border-slate-200 rounded-xl shadow-xl p-3 text-xs">
+        <p className="font-bold mb-1" style={{ color: d.color }}>{d.name}</p>
+        <p className="text-slate-600">營收占比：<span className="font-mono font-bold text-indigo-600">{payload[0].value}%</span></p>
+        <p className="text-slate-400 mt-0.5">絕對值：<span className="font-mono">${(d.revenue / 1000000).toFixed(1)}M</span></p>
+      </div>
+    );
+  };
+
+  const simpleBarTooltip = (yLabel: string, fmt: (v: number) => string) =>
+    ({ active, payload }: any) => {
+      if (!active || !payload?.length) return null;
+      const d = payload[0].payload;
+      return (
+        <div className="bg-white border border-slate-200 rounded-xl shadow-xl p-3 text-xs">
+          <p className="font-bold mb-1" style={{ color: d.color }}>{d.name}</p>
+          <p className="text-slate-600">{yLabel}：<span className="font-mono font-bold">{fmt(payload[0].value)}</span></p>
+        </div>
+      );
+    };
+
+  const hvHealthTooltip = simpleBarTooltip('高價值會員數', v => v.toLocaleString());
+  const growthTooltip = simpleBarTooltip('會員數', v => v.toLocaleString());
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-12">
+
       {/* Header */}
       <div className="mb-4">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">會員分群</h1>
         <p className="mt-1 text-sm text-slate-500">
-          依照 RFM 指標將會員分成六大群體，分析各群結構、營收貢獻與回購能力。
+          依照 RFM 指標將會員分成六大群體，分析各群結構、營收貢獻與健康度。
         </p>
       </div>
 
-      {/* Control Bar — no column selector on chart-only pages */}
+      {/* Control Bar */}
       <AnalyticsControlBar
-        dimensionFields={[
-          {
-            id: 'category', label: '商品分類',
-            options: [
-              { id: 'bags', label: '包袋' },
-              { id: 'clothing', label: '服飾' },
-              { id: 'shoes', label: '鞋靴' },
-              { id: 'accessory', label: '配件' },
-              { id: 'beauty', label: '美妝' },
-              { id: 'lifestyle', label: '生活用品' },
-            ],
-          },
-          {
-            id: 'product', label: '商品ID',
-            options: Array.from({ length: 12 }, (_, i) => ({ id: `P${1001 + i}`, label: `P${1001 + i}` })),
-          },
-          {
-            id: 'sku', label: 'SKU ID',
-            options: Array.from({ length: 20 }, (_, i) => ({
-              id: `SKU-${String.fromCharCode(65 + i)}`,
-              label: `SKU-${String.fromCharCode(65 + i)}`,
-            })),
-          },
-          {
-            id: 'gender', label: '性別',
-            options: [{ id: 'female', label: '女性' }, { id: 'male', label: '男性' }],
-          },
-          {
-            id: 'age', label: '年齡',
-            options: [
-              { id: '18-24', label: '18–24' },
-              { id: '25-34', label: '25–34' },
-              { id: '35-44', label: '35–44' },
-              { id: '45-54', label: '45–54' },
-              { id: '55+', label: '55+' },
-            ],
-          },
-          {
-            id: 'tier', label: '會員階級',
-            options: ['一般', '銅', '銀', '金', '鑽石'].map(t => ({ id: t, label: t })),
-          },
-        ]}
+        dimensionFields={MEMBER_DIMENSION_FIELDS}
         selectedDimensionsMap={selectedDimensionsMap}
         onDimensionsMapChange={setSelectedDimensionsMap}
         hideTimeGranularity={true}
@@ -363,7 +309,6 @@ export default function Segmentation() {
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
         <h3 className="text-base font-bold text-slate-800 mb-4">🍩 會員分群分布</h3>
         <div className="flex flex-col lg:flex-row gap-6 items-center">
-          {/* Donut */}
           <div style={{ height: 280, width: '100%', maxWidth: 320, flexShrink: 0 }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -379,9 +324,7 @@ export default function Segmentation() {
                   onClick={d => d.name && openDrawer(d.name)}
                   style={{ cursor: 'pointer' }}
                 >
-                  {SEGMENTS.map(s => (
-                    <Cell key={s.name} fill={s.color} />
-                  ))}
+                  {SEGMENTS.map(s => <Cell key={s.name} fill={s.color} />)}
                   <Label content={<SegDonutCenter />} position="center" />
                 </Pie>
                 <Tooltip content={donutTooltip} />
@@ -389,7 +332,6 @@ export default function Segmentation() {
             </ResponsiveContainer>
           </div>
 
-          {/* Legend + segment cards */}
           <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full">
             {SEGMENTS.map(s => {
               const pct = ((s.memberCount / totalSegmentMembers) * 100).toFixed(1);
@@ -414,40 +356,48 @@ export default function Segmentation() {
         </div>
       </div>
 
-      {/* ── Charts Row 2: Revenue + Count ── */}
+      {/* ── Row 2: 各分群營收貢獻(%) + 高價值會員健康度 ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Chart 2: 各分群營收貢獻 */}
+
+        {/* Chart 2: 各分群營收貢獻 (%) */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
           <h3 className="text-base font-bold text-slate-800 mb-1">💰 各分群營收貢獻</h3>
-          <p className="text-xs text-slate-400 mb-4">點擊柱子查看該分群會員名單</p>
+          <p className="text-xs text-slate-400 mb-4">各分群佔總營收比例（點擊柱子查看名單）</p>
           <div style={{ height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={SEGMENTS} margin={{ top: 8, right: 16, bottom: 8, left: 8 }} onClick={handleBarClick}>
+              <BarChart data={revenueShareData} margin={{ top: 8, right: 16, bottom: 8, left: 0 }} onClick={handleBarClick}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 10, fontWeight: 600 }} dy={8} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => `${(v / 1000000).toFixed(0)}M`} />
-                <Tooltip content={revenueTooltip} cursor={{ fill: '#f8fafc' }} />
-                <Bar dataKey="revenue" name="營收（GMV）" radius={[6, 6, 0, 0]} cursor="pointer">
-                  {SEGMENTS.map(s => <Cell key={s.name} fill={s.color} />)}
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 60]} />
+                <Tooltip content={revenueShareTooltip} cursor={{ fill: '#f8fafc' }} />
+                <Bar dataKey="revenueShare" name="營收占比" radius={[6, 6, 0, 0]} cursor="pointer">
+                  {revenueShareData.map(s => <Cell key={s.name} fill={s.color} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Chart 3: 各分群會員數 */}
+        {/* Chart 3: 高價值會員健康度 */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-          <h3 className="text-base font-bold text-slate-800 mb-1">👥 各分群會員數</h3>
-          <p className="text-xs text-slate-400 mb-4">點擊柱子查看該分群會員名單</p>
+          <h3 className="text-base font-bold text-slate-800 mb-1">💎 高價值會員健康度</h3>
+          <p className="text-xs text-slate-400 mb-4">高價值會員的活躍 / 可能流失 / 已流失分布（點擊查看名單）</p>
           <div style={{ height: 260 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={SEGMENTS} margin={{ top: 8, right: 16, bottom: 8, left: 8 }} onClick={handleBarClick}>
+              <BarChart
+                data={HV_HEALTH}
+                margin={{ top: 8, right: 16, bottom: 8, left: 0 }}
+                onClick={(s: any) => {
+                  const name = s?.activePayload?.[0]?.payload?.name;
+                  if (name) openDrawerByName(name);
+                }}
+              >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 10, fontWeight: 600 }} dy={8} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <Tooltip content={countTooltip} cursor={{ fill: '#f8fafc' }} />
-                <Bar dataKey="memberCount" name="會員數" radius={[6, 6, 0, 0]} cursor="pointer">
-                  {SEGMENTS.map(s => <Cell key={s.name} fill={s.color} />)}
+                <Tooltip content={hvHealthTooltip} cursor={{ fill: '#f8fafc' }} />
+                <Bar dataKey="count" name="會員數" radius={[6, 6, 0, 0]} cursor="pointer">
+                  {HV_HEALTH.map(d => <Cell key={d.name} fill={d.color} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -455,44 +405,30 @@ export default function Segmentation() {
         </div>
       </div>
 
-      {/* ── Charts Row 3: Repurchase + AOV ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Chart 4: 分群回購能力 */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-          <h3 className="text-base font-bold text-slate-800 mb-1">🔄 分群回購能力</h3>
-          <p className="text-xs text-slate-400 mb-4">平均兩次購買間隔天數（越短越活躍）</p>
-          <div style={{ height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={SEGMENTS} margin={{ top: 8, right: 16, bottom: 8, left: 8 }} onClick={handleBarClick}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 10, fontWeight: 600 }} dy={8} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => `${v}天`} />
-                <Tooltip content={repurchaseTooltip} cursor={{ fill: '#f8fafc' }} />
-                <Bar dataKey="avgRepurchaseDays" name="平均回購天數" radius={[6, 6, 0, 0]} cursor="pointer">
-                  {SEGMENTS.map(s => <Cell key={s.name} fill={s.color} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Chart 5: 分群客單價 */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-          <h3 className="text-base font-bold text-slate-800 mb-1">🏷️ 分群客單價</h3>
-          <p className="text-xs text-slate-400 mb-4">各分群平均每筆訂單金額</p>
-          <div style={{ height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={SEGMENTS} margin={{ top: 8, right: 16, bottom: 8, left: 8 }} onClick={handleBarClick}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 10, fontWeight: 600 }} dy={8} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={v => `$${v.toLocaleString()}`} />
-                <Tooltip content={aovTooltip} cursor={{ fill: '#f8fafc' }} />
-                <Bar dataKey="avgAOV" name="平均客單價" radius={[6, 6, 0, 0]} cursor="pointer">
-                  {SEGMENTS.map(s => <Cell key={s.name} fill={s.color} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+      {/* ── Row 3: 新會員成長能力 ── */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
+        <h3 className="text-base font-bold text-slate-800 mb-1">🌱 新會員成長能力</h3>
+        <p className="text-xs text-slate-400 mb-4">新會員在首次購買後的消費深度分布（點擊查看名單）</p>
+        <div style={{ height: 240 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={NEW_MEMBER_GROWTH}
+              layout="vertical"
+              margin={{ top: 4, right: 48, bottom: 4, left: 0 }}
+              onClick={(s: any) => {
+                const name = s?.activePayload?.[0]?.payload?.name;
+                if (name) openDrawerByName(name);
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+              <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} />
+              <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#475569', fontSize: 12, fontWeight: 600 }} width={100} />
+              <Tooltip content={growthTooltip} cursor={{ fill: '#f8fafc' }} />
+              <Bar dataKey="count" name="會員數" radius={[0, 6, 6, 0]} cursor="pointer" label={{ position: 'right', fill: '#64748b', fontSize: 11, fontWeight: 700, formatter: (v: any) => (v as number).toLocaleString() }}>
+                {NEW_MEMBER_GROWTH.map(d => <Cell key={d.name} fill={d.color} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
