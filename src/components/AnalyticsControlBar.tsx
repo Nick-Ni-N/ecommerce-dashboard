@@ -52,6 +52,17 @@ interface AnalyticsControlBarProps {
     onCustomStartChange?: (date: string) => void;
     customEnd?: string;
     onCustomEndChange?: (date: string) => void;
+
+    // Time granularity — expose to parent if needed
+    timeUnit?: string;
+    onTimeUnitChange?: (unit: string) => void;
+
+    // Override the preset list shown in the date dropdown
+    datePresets?: string[];
+
+    // Period comparison toggle
+    showComparison?: boolean;
+    onShowComparisonChange?: (v: boolean) => void;
 }
 
 export default function AnalyticsControlBar({
@@ -75,12 +86,19 @@ export default function AnalyticsControlBar({
     customStart: externalCustomStart = '2026-03-01',
     onCustomStartChange,
     customEnd: externalCustomEnd = '2026-03-10',
-    onCustomEndChange
+    onCustomEndChange,
+    timeUnit: externalTimeUnit,
+    onTimeUnitChange,
+    datePresets,
+    showComparison,
+    onShowComparisonChange,
 }: AnalyticsControlBarProps) {
     const [tempStart, setTempStart] = useState(externalCustomStart);
     const [tempEnd, setTempEnd] = useState(externalCustomEnd);
     const [isDateOpen, setIsDateOpen] = useState(false);
-    const [timeUnit, setTimeUnit] = useState('日');
+    const [internalTimeUnit, setInternalTimeUnit] = useState('日');
+    const timeUnit = externalTimeUnit !== undefined ? externalTimeUnit : internalTimeUnit;
+    const setTimeUnit = (u: string) => { setInternalTimeUnit(u); onTimeUnitChange?.(u); };
 
     const [isMetricsOpen, setIsMetricsOpen] = useState(false);
     const [isDimensionsOpen, setIsDimensionsOpen] = useState(false);
@@ -190,7 +208,7 @@ export default function AnalyticsControlBar({
                         style={dropdownStyle}
                     >
                         <div className="flex flex-col gap-1">
-                            {['今日', '昨日', '最近7天', '最近30天', '本月', '上月'].map(opt => (
+                            {(datePresets ?? ['今日', '昨日', '最近7天', '最近30天', '本月', '上月']).map(opt => (
                                 <button
                                     key={opt}
                                     onClick={() => { onDateRangeTypeChange?.(opt); closeAll(); }}
@@ -451,6 +469,21 @@ export default function AnalyticsControlBar({
                             <button key={unit} onClick={() => setTimeUnit(unit)} className={`flex-1 text-center py-1 text-xs font-medium rounded-md transition-colors ${timeUnit === unit ? 'bg-white shadow-sm ring-1 ring-slate-200 text-slate-900' : 'text-slate-500 hover:text-slate-900'}`}>{unit}</button>
                         ))}
                     </div>
+                )}
+                {onShowComparisonChange && (
+                    <button
+                        onClick={() => onShowComparisonChange(!showComparison)}
+                        className={`flex items-center gap-2 px-3 h-[36px] text-xs font-bold rounded-lg border transition-all shrink-0 ${
+                            showComparison
+                                ? 'border-violet-300 bg-violet-50 text-violet-700 shadow-sm'
+                                : 'border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300'
+                        }`}
+                    >
+                        <span className={`w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center transition-colors ${showComparison ? 'border-violet-500 bg-violet-500' : 'border-slate-300 bg-white'}`}>
+                            {showComparison && <span className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </span>
+                        同期比較
+                    </button>
                 )}
                 {!singleRowLayout && <div className="h-8 w-px bg-slate-100 hidden sm:block mx-1"></div>}
                 {showMetricSelector && renderMetricSelector()}

@@ -7,17 +7,11 @@ import {
 
 const navigation = [
     {
-        name: '總表',
+        name: '電商總覽',
         icon: LayoutDashboard,
         pathPattern: '/overview',
-        items: [
-            { name: '總覽資料表', href: '/overview/dashboard' },
-            { name: '營收趨勢', href: '/overview/revenue-trend' },
-            { name: '新客 vs 回購', href: '/overview/new-vs-returning' },
-            { name: '轉換漏斗', href: '/overview/conversion-funnel' },
-            { name: '品類結構', href: '/overview/category-structure' },
-            { name: '獲利監控', href: '/overview/profitability' },
-        ],
+        href: '/overview/dashboard',
+        items: [],
     },
     {
         name: '會員',
@@ -107,6 +101,33 @@ export default function Sidebar() {
                         const isActiveParent = location.pathname.startsWith(section.pathPattern);
                         const isExpanded = expandedSections[section.name] !== false && (expandedSections[section.name] || isActiveParent);
 
+                        // Direct-link section (no sub-items)
+                        if (section.items.length === 0 && 'href' in section) {
+                            return (
+                                <NavLink
+                                    key={section.name}
+                                    to={section.href as string}
+                                    className={({ isActive }) =>
+                                        `flex items-center px-3 py-2.5 text-sm font-semibold rounded-lg transition-colors ${isActive
+                                            ? 'bg-indigo-50/80 text-indigo-700'
+                                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                        }`
+                                    }
+                                >
+                                    {({ isActive }) => (
+                                        <>
+                                            <section.icon
+                                                className={`mr-3 h-5 w-5 flex-shrink-0 ${isActive ? 'text-indigo-600' : 'text-slate-400'}`}
+                                                aria-hidden="true"
+                                            />
+                                            {section.name}
+                                        </>
+                                    )}
+                                </NavLink>
+                            );
+                        }
+
+                        // Expandable section (has sub-items)
                         return (
                             <div key={section.name} className="space-y-1">
                                 <button
