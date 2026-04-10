@@ -23,6 +23,10 @@ export interface EcommerceDailyRow {
   gmv: number;
   gross_margin: number; // ratio 0.35–0.42
   net_profit: number;
+  newUsers: number;       // uu × newUserRatio (clamped 0.15–0.40)
+  returningUsers: number; // uu - newUsers
+  newGMV: number;         // GMV attributed to new customers
+  returningGMV: number;   // GMV attributed to returning customers
 }
 
 export interface GenerateResult {
@@ -145,6 +149,11 @@ export function generateEcommerceData(
   const rand  = () => rng();           // [0, 1)
   const randn = () => rng() * 2 - 1;  // [-1, 1)
 
+  // Separate RNG for new/returning split — keeps main rng sequence identical
+  const rng2    = mkRng(seed + 137);
+  const rand2   = () => rng2();
+  const randn2  = () => rng2() * 2 - 1;
+
   const startMs   = new Date(startDate).getTime();
   const endMs     = new Date(endDate).getTime();
   const totalDays = Math.round((endMs - startMs) / MS_DAY) + 1;
@@ -187,6 +196,11 @@ export function generateEcommerceData(
   const cnAov:    number[][] = Array.from({ length: CH.length }, () => Array.from({ length: totalDays }, randn));
   const cnMargin: number[][] = Array.from({ length: CH.length }, () => Array.from({ length: totalDays }, randn));
   const cnOp:     number[][] = Array.from({ length: CH.length }, () => Array.from({ length: totalDays }, randn));
+
+  // NVR noise (via rng2 — independent of main sequence)
+  const nvrRatio:  number[] = Array.from({ length: totalDays }, randn2); // new-user ratio noise
+  const nvrNewAov: number[] = Array.from({ length: totalDays }, rand2);  // new-customer AOV mult noise
+  const nvrRetAov: number[] = Array.from({ length: totalDays }, rand2);  // returning AOV mult noise
 
   const channelData: EcommerceChannelRow[] = [];
   const totalData:   EcommerceDailyRow[]   = [];
@@ -245,14 +259,30 @@ export function generateEcommerceData(
     const dd   = String(d.getDate()).padStart(2, '0');
     const date = `${yyyy}-${mm}-${dd}`;
 
+    // ── New vs Returning split ────────────────────────────────────────────────
+    // Base ~20% new; promo days spike to 34%; wide noise (±7pp); clamp [12%, 48%]
+    const newUserRatio  = Math.min(0.48, Math.max(0.12, 0.20 + (isSp ? 0.14 : 0) + nvrRatio[i] * 0.07));
+    const tNewUsers     = Math.round(tUu * newUserRatio);
+    const tRetUsers     = tUu - tNewUsers;
+    // Pronounced AOV gap: new 0.78–0.95×, returning 1.25–1.55× → ~9–10pp GMV vs UU gap
+    const rawNewGMV     = tNewUsers  * tAov * (0.78 + nvrNewAov[i] * 0.17);
+    const rawRetGMV     = tRetUsers  * tAov * (1.25 + nvrRetAov[i] * 0.30);
+    const nvrScale      = tGmv / (rawNewGMV + rawRetGMV);
+    const tNewGMV       = Math.round(rawNewGMV * nvrScale);
+    const tRetGMV       = tGmv - tNewGMV; // guarantees exact sum
+
     totalData.push({
       date,
-      uu:           tUu,
-      orders:       tOrders,
-      aov:          tAov,
-      gmv:          tGmv,
-      gross_margin: parseFloat(tGm.toFixed(4)),
-      net_profit:   tNetP,
+      uu:             tUu,
+      orders:         tOrders,
+      aov:            tAov,
+      gmv:            tGmv,
+      gross_margin:   parseFloat(tGm.toFixed(4)),
+      net_profit:     tNetP,
+      newUsers:       tNewUsers,
+      returningUsers: tRetUsers,
+      newGMV:         tNewGMV,
+      returningGMV:   tRetGMV,
     });
 
     // ── Step 2: Split total GMV into channels ────────────────────────────────────

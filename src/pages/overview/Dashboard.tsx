@@ -1,12 +1,12 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  DollarSign, Target, ShoppingCart, MousePointerClick, TrendingUp, Wallet,
+  DollarSign, Target, ShoppingCart, MousePointerClick, Users, Package,
   ArrowUpRight, ArrowDownRight, ChevronRight, ChevronsRight, GripVertical, ChevronDown,
 } from 'lucide-react';
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell, PieChart, Pie,
+  ResponsiveContainer, Cell,
 } from 'recharts';
 import AnalyticsControlBar from '../../components/AnalyticsControlBar';
 import FilterBadges from '../../components/FilterBadges';
@@ -34,6 +34,10 @@ interface TableDataRow {
   firstOrders: number;
   firstOrderRatio: number;
   coCoinUsage: number;
+  newUsers: number;
+  returningUsers: number;
+  newGMV: number;
+  returningGMV: number;
 }
 
 interface TimePeriod {
@@ -57,6 +61,10 @@ interface AggregatedPeriod extends TimePeriod {
   firstOrders: number;
   firstOrderRatio: number;
   coCoinUsage: number;
+  newUsers: number;
+  returningUsers: number;
+  newGMV: number;
+  returningGMV: number;
 }
 
 interface MetricDef {
@@ -102,6 +110,14 @@ function buildData(): { dailyTable: TableDataRow[]; channelData: EcommerceChanne
     'LINE':     [0.35, 0.65],
     'Referral': [0.45, 0.55],
   };
+  // GMV split — new customers get a disproportionately smaller share of GMV (lower AOV)
+  // Weighted avg: ~31% new GMV vs ~40% new UU → ~9pp gap in NVR card
+  const CT_SPLIT_GMV: Record<string, [number, number]> = {
+    'Organic':  [0.22, 0.78],
+    'Paid Ads': [0.45, 0.55],
+    'LINE':     [0.26, 0.74],
+    'Referral': [0.33, 0.67],
+  };
   const G_SPLIT = [0.47, 0.38, 0.15]; // 女, 男, 未知
   const GENDERS = ['女', '男', '未知'] as const;
   const CTS     = ['新客', '舊客'] as const;
@@ -118,17 +134,19 @@ function buildData(): { dailyTable: TableDataRow[]; channelData: EcommerceChanne
     const info = perDate.get(chRow.date);
     if (!info) continue;
 
-    const ch      = chRow.channel as ChannelName;
-    const ctSplit = CT_SPLIT[ch] ?? [0.40, 0.60];
+    const ch       = chRow.channel as ChannelName;
+    const ctSplit  = CT_SPLIT[ch]     ?? [0.40, 0.60];
+    const gmvSplit = CT_SPLIT_GMV[ch] ?? [0.35, 0.65];
 
     for (let ci = 0; ci < 2; ci++) {
       for (let gi = 0; gi < 3; gi++) {
-        const ratio = ctSplit[ci] * G_SPLIT[gi];
+        const uuRatio  = ctSplit[ci]  * G_SPLIT[gi];
+        const gmvRatio = gmvSplit[ci] * G_SPLIT[gi];
 
-        const subGmv        = chRow.gmv       * ratio;
-        const subOrders     = Math.max(0, Math.round(chRow.orders    * ratio));
-        const subUu         = Math.max(0, Math.round(chRow.uu        * ratio));
-        const subNetProfit  = chRow.net_profit * ratio;
+        const subGmv        = chRow.gmv        * gmvRatio;
+        const subOrders     = Math.max(0, Math.round(chRow.orders * uuRatio));
+        const subUu         = Math.max(0, Math.round(chRow.uu     * uuRatio));
+        const subNetProfit  = chRow.net_profit * gmvRatio;
         const grossMarginPct = parseFloat((chRow.gross_margin * 100).toFixed(1));
         const subGrossProfit = Math.round(subGmv * chRow.gross_margin);
 
@@ -173,6 +191,10 @@ function buildData(): { dailyTable: TableDataRow[]; channelData: EcommerceChanne
           firstOrders,
           firstOrderRatio,
           coCoinUsage,
+          newUsers:       ct === '新客' ? subUu  : 0,
+          returningUsers: ct === '舊客' ? subUu  : 0,
+          newGMV:         ct === '新客' ? subGmv : 0,
+          returningGMV:   ct === '舊客' ? subGmv : 0,
         });
       }
     }
@@ -224,13 +246,6 @@ const DATE_PRESETS = ['近7天', '近30天', '近90天', '本月', '本季', '�
 
 
 
-const NVR_DATA = [{ name: '回購客', value: 62, fill: '#6366f1' }, { name: '新客', value: 38, fill: '#c7d2fe' }];
-const FUNNEL = [
-  { name: 'UU（不重複訪客）', value: 18_420, fill: '#e0e7ff', rate: null  },
-  { name: '加入購物車',       value:  2_215, fill: '#818cf8', rate: 12.0 },
-  { name: '進入結帳',         value:  1_552, fill: '#6366f1', rate: 70.1 },
-  { name: '完成訂單',         value:    401, fill: '#4338ca', rate: 25.8 },
-];
 
 // ─── Time Utilities ───────────────────────────────────────────────────────────
 const TODAY = '2026-03-19';
@@ -342,6 +357,7 @@ function aggregateRows(rows: TableDataRow[]): Omit<AggregatedPeriod, keyof TimeP
   if (rows.length === 0) return {
     gmv: 0, orders: 0, aov: 0, uu: 0, cvr: 0, atcRate: 0, grossMarginPct: 0,
     netProfit: 0, targetPct: 0, grossProfit: 0, firstOrders: 0, firstOrderRatio: 0, coCoinUsage: 0,
+    newUsers: 0, returningUsers: 0, newGMV: 0, returningGMV: 0,
   };
   const totalGmv         = rows.reduce((s, r) => s + r.gmv,         0);
   const totalOrders      = rows.reduce((s, r) => s + r.orders,      0);
@@ -364,6 +380,10 @@ function aggregateRows(rows: TableDataRow[]): Omit<AggregatedPeriod, keyof TimeP
     firstOrders:    totalFirstOrders,
     firstOrderRatio: totalOrders > 0 ? parseFloat((totalFirstOrders / totalOrders * 100).toFixed(1)) : 0,
     coCoinUsage:    totalCoCoinUsage,
+    newUsers:       rows.reduce((s, r) => s + (r.newUsers       || 0), 0),
+    returningUsers: rows.reduce((s, r) => s + (r.returningUsers || 0), 0),
+    newGMV:         rows.reduce((s, r) => s + (r.newGMV         || 0), 0),
+    returningGMV:   rows.reduce((s, r) => s + (r.returningGMV   || 0), 0),
   };
 }
 
@@ -571,6 +591,8 @@ export default function OverviewDashboard() {
     const tgtD   = pp(curr.targetPct,        prior.targetPct);
     const cvrD   = pp(curr.cvr,              prior.cvr);
     const marginD = pp(curr.grossMarginPct,  prior.grossMarginPct);
+    const uuD    = pct(curr.uu,              prior.uu);
+    const ordD   = pct(curr.orders,          prior.orders);
     return {
       gmv: curr.gmv,             gmvDelta: gmvD.delta,        gmvUp: gmvD.up,
       target: curr.targetPct,    targetDelta: tgtD.delta,     targetUp: tgtD.up,
@@ -578,6 +600,60 @@ export default function OverviewDashboard() {
       cvr: curr.cvr,             cvrDelta: cvrD.delta,        cvrUp: cvrD.up,
       grossMargin: curr.grossMarginPct, marginDelta: marginD.delta, marginUp: marginD.up,
       netProfit: curr.netProfit, netProfitDelta: npD.delta,   netProfitUp: npD.up,
+      uu: curr.uu,               uuDelta: uuD.delta,          uuUp: uuD.up,
+      orders: curr.orders,       ordersDelta: ordD.delta,     ordersUp: ordD.up,
+    };
+  }, [rangeFiltered, dailyTable, rangeStart, rangeEnd]);
+
+  // 10. Funnel data — computed from rangeFiltered
+  const funnelData = useMemo(() => {
+    const agg = aggregateRows(rangeFiltered);
+    const uu      = agg.uu;
+    const atc     = Math.round(uu * agg.atcRate / 100);
+    const orders  = agg.orders;
+    const checkout = Math.max(orders, Math.round(atc * 0.70));
+    return [
+      { name: 'UU（不重複訪客）', value: uu,       fill: '#e0e7ff', rate: null as null | number },
+      { name: '加入購物車',       value: atc,      fill: '#818cf8', rate: uu       > 0 ? parseFloat((atc      / uu       * 100).toFixed(1)) : 0 },
+      { name: '進入結帳',         value: checkout, fill: '#6366f1', rate: atc      > 0 ? parseFloat((checkout / atc      * 100).toFixed(1)) : 0 },
+      { name: '完成訂單',         value: orders,   fill: '#4338ca', rate: checkout > 0 ? parseFloat((orders   / checkout * 100).toFixed(1)) : 0 },
+    ];
+  }, [rangeFiltered]);
+
+  // 11. Co幣 & 淨利率 metrics — computed from rangeFiltered vs prior period
+  const coinsMetrics = useMemo(() => {
+    const curr = aggregateRows(rangeFiltered);
+    const rangeStartD = new Date(rangeStart);
+    const rangeEndD   = new Date(rangeEnd);
+    const days = Math.round((rangeEndD.getTime() - rangeStartD.getTime()) / 86400000);
+    const priorEndD   = new Date(rangeStartD); priorEndD.setDate(priorEndD.getDate() - 1);
+    const priorStartD = new Date(priorEndD);   priorStartD.setDate(priorStartD.getDate() - days);
+    const priorRows = dailyTable.filter(r => r.date >= fmt(priorStartD) && r.date <= fmt(priorEndD));
+    const prior = aggregateRows(priorRows);
+
+    const currNetRate  = curr.gmv  > 0 ? curr.netProfit  / curr.gmv  * 100 : 0;
+    const priorNetRate = prior.gmv > 0 ? prior.netProfit / prior.gmv * 100 : 0;
+    const netRateDelta = currNetRate - priorNetRate;
+
+    const currBurnRate  = curr.gmv  > 0 ? curr.coCoinUsage  / curr.gmv  * 100 : 0;
+    const priorBurnRate = prior.gmv > 0 ? prior.coCoinUsage / prior.gmv * 100 : 0;
+    const burnDelta = currBurnRate - priorBurnRate;
+
+    const currCoOrders  = rangeFiltered.reduce((s, r) => s + (r.isUsingCoCoin === '是' ? r.orders : 0), 0);
+    const priorCoOrders = priorRows.reduce((s, r) => s + (r.isUsingCoCoin === '是' ? r.orders : 0), 0);
+    const currPen  = curr.orders  > 0 ? currCoOrders  / curr.orders  * 100 : 0;
+    const priorPen = prior.orders > 0 ? priorCoOrders / prior.orders * 100 : 0;
+    const penDelta = currPen - priorPen;
+
+    const fmtPP = (d: number) => `${d >= 0 ? '+' : ''}${d.toFixed(1)}pp`;
+    return {
+      netProfitRate: currNetRate,
+      npRateDelta: fmtPP(netRateDelta), npRateUp: netRateDelta >= 0,
+      burnRate:    currBurnRate,
+      burnDelta:   fmtPP(burnDelta),    burnUp:    burnDelta <= 0,
+      burnAmount:  curr.coCoinUsage,
+      penetration: currPen,
+      penDelta:    fmtPP(penDelta),     penUp:     penDelta >= 0,
     };
   }, [rangeFiltered, dailyTable, rangeStart, rangeEnd]);
 
@@ -600,6 +676,23 @@ export default function OverviewDashboard() {
       totalGmv,
     }));
   }, [channelData, rangeStart, rangeEnd]);
+
+  // ── New vs Returning — grouped bar data ───────────────────────────────────
+  const nvrData = useMemo(() => {
+    const totalUu  = rangeFiltered.reduce((s, r) => s + r.uu,  0);
+    const totalGmv = rangeFiltered.reduce((s, r) => s + r.gmv, 0);
+    return (['新客', '舊客'] as const).map(ct => {
+      const rows = rangeFiltered.filter(r => r.customerType === ct);
+      const uu  = rows.reduce((s, r) => s + r.uu,  0);
+      const gmv = rows.reduce((s, r) => s + r.gmv, 0);
+      return {
+        name:     ct === '新客' ? '新客' : '回購客',
+        人數佔比: totalUu  > 0 ? Math.round(uu  / totalUu  * 100) : 0,
+        GMV佔比:  totalGmv > 0 ? Math.round(gmv / totalGmv * 100) : 0,
+        人均GMV:  uu > 0 ? Math.round(gmv / uu) : 0,
+      };
+    });
+  }, [rangeFiltered]);
 
   // ── Dimension filter badges ────────────────────────────────────────────────
   const dimFilterBadges = useMemo(() => {
@@ -729,8 +822,8 @@ export default function OverviewDashboard() {
           { icon: Target, bg: 'bg-amber-50', color: 'text-amber-600', label: '目標達成率', value: `${kpi.target}%`, delta: kpi.targetDelta, up: kpi.targetUp, progress: kpi.target },
           { icon: ShoppingCart, bg: 'bg-sky-50', color: 'text-sky-600', label: 'AOV', value: fmtNT(kpi.aov), delta: kpi.aovDelta, up: kpi.aovUp, onClick: () => navigate('/members/value-analysis') },
           { icon: MousePointerClick, bg: 'bg-emerald-50', color: 'text-emerald-600', label: 'CVR', value: `${kpi.cvr}%`, delta: kpi.cvrDelta, up: kpi.cvrUp, onClick: () => navigate('/traffic/acquisition-quality') },
-          { icon: TrendingUp, bg: 'bg-violet-50', color: 'text-violet-600', label: '毛利率', value: `${kpi.grossMargin}%`, delta: kpi.marginDelta, up: kpi.marginUp },
-          { icon: Wallet, bg: 'bg-rose-50', color: 'text-rose-500', label: '淨獲利', value: fmtNT(kpi.netProfit), delta: kpi.netProfitDelta, up: kpi.netProfitUp },
+          { icon: Users, bg: 'bg-violet-50', color: 'text-violet-600', label: 'UU', value: kpi.uu.toLocaleString(), delta: kpi.uuDelta, up: kpi.uuUp },
+          { icon: Package, bg: 'bg-rose-50', color: 'text-rose-500', label: '訂單數', value: kpi.orders.toLocaleString(), delta: kpi.ordersDelta, up: kpi.ordersUp },
         ].map(card => (
           <div
             key={card.label}
@@ -806,7 +899,7 @@ export default function OverviewDashboard() {
                   className="text-center text-xs font-bold text-indigo-600 px-3 py-3.5 whitespace-nowrap border-l border-indigo-200"
                   style={{ position: 'sticky', right: 0, zIndex: 30, minWidth: 120, backgroundColor: '#e0e7ff', boxShadow: '-4px 0 8px -2px rgba(99,102,241,0.08)' }}
                 >
-                  合計
+                  Total
                 </th>
               </tr>
             </thead>
@@ -1045,8 +1138,8 @@ export default function OverviewDashboard() {
             <ChevronRight className="w-4 h-4 text-slate-300 mt-0.5 flex-shrink-0" />
           </div>
           <div className="space-y-3">
-            {FUNNEL.map((step, i) => {
-              const pct = step.value / FUNNEL[0].value * 100;
+            {funnelData.map((step, i) => {
+              const pct = funnelData[0].value > 0 ? step.value / funnelData[0].value * 100 : 0;
               return (
                 <div key={step.name}>
                   <div className="flex justify-between text-xs mb-1.5">
@@ -1057,7 +1150,7 @@ export default function OverviewDashboard() {
                     </div>
                   </div>
                   <div className="h-6 bg-slate-100 rounded-lg overflow-hidden">
-                    <div className="h-full rounded-lg flex items-center pl-2.5 transition-all duration-700" style={{ width: `${pct}%`, background: FUNNEL[i].fill }}>
+                    <div className="h-full rounded-lg flex items-center pl-2.5 transition-all duration-700" style={{ width: `${pct}%`, background: funnelData[i].fill }}>
                       {pct > 22 && <span className="text-[10px] font-bold text-indigo-900/50">{pct.toFixed(1)}%</span>}
                     </div>
                   </div>
@@ -1068,11 +1161,11 @@ export default function OverviewDashboard() {
           <div className="mt-5 pt-4 border-t border-slate-50 grid grid-cols-2 gap-3">
             <div className="bg-slate-50 rounded-xl p-3">
               <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">整體 CVR</p>
-              <p className="text-lg font-black text-indigo-700">{(FUNNEL[3].value / FUNNEL[0].value * 100).toFixed(2)}%</p>
+              <p className="text-lg font-black text-indigo-700">{funnelData[0].value > 0 ? (funnelData[3].value / funnelData[0].value * 100).toFixed(2) : '0.00'}%</p>
             </div>
             <div className="bg-rose-50 rounded-xl p-3">
               <p className="text-[10px] text-slate-400 uppercase tracking-widest mb-1">購物車放棄率</p>
-              <p className="text-lg font-black text-rose-600">{(100 - FUNNEL[2].rate!).toFixed(1)}%</p>
+              <p className="text-lg font-black text-rose-600">{funnelData[2].rate != null ? (100 - funnelData[2].rate).toFixed(1) : '—'}%</p>
             </div>
           </div>
         </div>
@@ -1114,39 +1207,86 @@ export default function OverviewDashboard() {
           </div>
 
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between mb-3">
+            <div className="flex items-start justify-between mb-4">
               <div>
                 <h3 className="text-base font-bold text-slate-800">👥 新舊客結構</h3>
-                <p className="text-xs text-slate-400 mt-0.5">GMV 占比 · 首購訂單</p>
+                <p className="text-xs text-slate-400 mt-0.5">人數 vs GMV 佔比</p>
               </div>
               <button onClick={() => navigate('/members/new-member-conversion')} className="text-xs text-indigo-600 font-bold flex items-center gap-0.5 hover:underline flex-shrink-0">
                 會員分析 <ChevronRight className="w-3 h-3" />
               </button>
             </div>
-            <div className="flex items-center gap-6">
-              <div style={{ height: 100, width: 100, flexShrink: 0 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={NVR_DATA} dataKey="value" cx="50%" cy="50%" innerRadius={30} outerRadius={48} paddingAngle={3}>
-                      {NVR_DATA.map(d => <Cell key={d.name} fill={d.fill} />)}
-                    </Pie>
-                    <Tooltip formatter={(v: any) => `${v}%`} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="space-y-2 flex-1">
-                {NVR_DATA.map(d => (
-                  <div key={d.name} className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: d.fill }} />
-                    <span className="text-sm text-slate-600 flex-1">{d.name}</span>
-                    <span className="text-sm font-black text-slate-900">{d.value}%</span>
+
+            {/* Column headers */}
+            <div className="grid grid-cols-[80px_1fr_1fr_100px] mb-2">
+              <div />
+              <div className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">人數佔比</div>
+              <div className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">GMV佔比</div>
+              <div className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">人均GMV</div>
+            </div>
+
+            {/* Data rows */}
+            {(() => {
+              const maxGmvPerUser  = Math.max(...nvrData.map(r => r.人均GMV));
+              const totalUsers     = nvrData.reduce((s, r) => s + (r.人均GMV > 0 ? 1 : 0), 0); // proxy check
+              const totalUuAll     = rangeFiltered.reduce((s, r) => s + r.uu,  0);
+              const totalGmvAll    = rangeFiltered.reduce((s, r) => s + r.gmv, 0);
+              const avgGMVPerUser  = totalUuAll > 0 ? totalGmvAll / totalUuAll : 0;
+              return nvrData.map((row, _idx) => {
+                const color    = row.name === '新客' ? '#6366f1' : '#10b981';
+                const gradient = `linear-gradient(90deg, ${color}99, ${color})`;
+                const isHigher = row.人均GMV === maxGmvPerUser;
+                const diffPct: number | null = (totalUuAll > 0 && avgGMVPerUser > 0 && row.人均GMV > 0)
+                  ? Math.round((row.人均GMV - avgGMVPerUser) / avgGMVPerUser * 100)
+                  : null;
+                void totalUsers; // suppress unused warning
+                return (
+                  <div key={row.name} className="grid grid-cols-[80px_1fr_1fr_100px] items-center py-3 border-t border-slate-100">
+                    {/* Row label */}
+                    <div className="flex items-center gap-2 pr-3">
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
+                      <span className="text-sm font-semibold text-slate-700 whitespace-nowrap">{row.name}</span>
+                    </div>
+                    {/* 人數佔比 cell — [thick bar] number */}
+                    <div className="px-3 border-l border-slate-100">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex-1 h-5 bg-slate-100 rounded-lg overflow-hidden">
+                          <div className="h-full rounded-r-lg" style={{ width: `${row.人數佔比}%`, background: gradient }} />
+                        </div>
+                        <span className="text-sm font-black tabular-nums w-9 text-right shrink-0" style={{ color }}>{row.人數佔比}%</span>
+                      </div>
+                    </div>
+                    {/* GMV佔比 cell — [thick bar] number */}
+                    <div className="px-3 border-l border-slate-100">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex-1 h-5 bg-slate-100 rounded-lg overflow-hidden">
+                          <div className="h-full rounded-r-lg" style={{ width: `${row.GMV佔比}%`, background: gradient }} />
+                        </div>
+                        <span className="text-sm font-black tabular-nums w-9 text-right shrink-0" style={{ color }}>{row.GMV佔比}%</span>
+                      </div>
+                    </div>
+                    {/* 人均GMV cell — number only, higher = stronger color */}
+                    <div className="px-3 border-l border-slate-100 text-right">
+                      <span className={`text-sm font-black tabular-nums ${isHigher ? 'text-emerald-600' : 'text-slate-500'}`}>
+                        NT${row.人均GMV.toLocaleString()}
+                      </span>
+                      {diffPct !== null && diffPct > 0 && (
+                        <div className="text-[10px] font-bold text-emerald-500 mt-0.5">
+                          ↑ +{diffPct}%
+                        </div>
+                      )}
+                      {diffPct !== null && diffPct < 0 && (
+                        <div className="text-[10px] font-bold text-slate-400 mt-0.5">
+                          ↓ {diffPct}%
+                        </div>
+                      )}
+                    </div>
                   </div>
-                ))}
-                <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                  <span className="text-xs text-slate-400">首購訂單占比</span>
-                  <span className="text-sm font-black text-indigo-700">38.4%</span>
-                </div>
-              </div>
+                );
+              });
+            })()}
+            <div className="mt-3 text-right">
+              <span className="text-xs text-slate-400">* 人均GMV差異為相對整體平均</span>
             </div>
           </div>
         </div>
@@ -1174,10 +1314,10 @@ export default function OverviewDashboard() {
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: '毛利率',     value: `${kpi.grossMargin}%`,                             delta: kpi.marginDelta,    up: kpi.marginUp,    sub: null,               color: 'text-violet-600' },
-            { label: '淨利率',     value: `${(kpi.netProfit / kpi.gmv * 100).toFixed(1)}%`,  delta: '+0.6pp',           up: true,            sub: null,               color: 'text-emerald-600' },
-            { label: 'Co幣 Burn',  value: '3.2%',                                            delta: '+0.3pp',           up: false,           sub: `${fmtNT(Math.round(kpi.gmv * 0.032))} 沖銷`, color: 'text-amber-600' },
-            { label: 'Co幣滲透率', value: '42.1%',                                           delta: '+2.8pp',           up: true,            sub: '使用Co幣訂單占比',  color: 'text-sky-600' },
+            { label: '毛利率',     value: `${kpi.grossMargin}%`,                                      delta: kpi.marginDelta,              up: kpi.marginUp,              sub: null,                                                color: 'text-violet-600' },
+            { label: '淨利率',     value: `${coinsMetrics.netProfitRate.toFixed(1)}%`,               delta: coinsMetrics.npRateDelta,      up: coinsMetrics.npRateUp,      sub: null,                                                color: 'text-emerald-600' },
+            { label: 'Co幣 Burn',  value: `${coinsMetrics.burnRate.toFixed(1)}%`,                   delta: coinsMetrics.burnDelta,        up: coinsMetrics.burnUp,        sub: `${fmtNT(Math.round(coinsMetrics.burnAmount))} 沖銷`, color: 'text-amber-600' },
+            { label: 'Co幣滲透率', value: `${coinsMetrics.penetration.toFixed(1)}%`,                delta: coinsMetrics.penDelta,         up: coinsMetrics.penUp,         sub: '使用Co幣訂單占比',                                  color: 'text-sky-600' },
           ].map(m => (
             <div key={m.label} className="bg-slate-50 rounded-xl p-4">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">{m.label}</p>
